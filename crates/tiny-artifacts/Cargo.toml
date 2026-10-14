@@ -19,3 +19,6 @@ thiserror.workspace = true
 anyhow.workspace = true
 uuid.workspace = true
 tinytools.workspace = true
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
