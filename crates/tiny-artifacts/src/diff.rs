@@ -45,17 +45,28 @@ pub struct ArtifactDiff {
     pub churn: f64,
 }
 
+/// A line count as `f64`, without the precision loss of a `usize` cast: counts
+/// past `u32::MAX` saturate, far beyond any diffable body.
+fn line_count(lines: usize) -> f64 {
+    f64::from(u32::try_from(lines).unwrap_or(u32::MAX))
+}
+
 impl ArtifactDiff {
     /// Diffs two revisions by line.
+    #[must_use]
     pub fn between(from: &ArtifactVersion, to: &ArtifactVersion) -> Self {
         let lines = diff_lines(&from.body, &to.body);
         let added = lines.iter().filter(|l| l.op == DiffOp::Insert).count();
         let removed = lines.iter().filter(|l| l.op == DiffOp::Delete).count();
         let original = from.body.lines().count();
         let churn = if original == 0 {
-            if added == 0 { 0.0 } else { 1.0 }
+            if added == 0 {
+                0.0
+            } else {
+                1.0
+            }
         } else {
-            (removed as f64 / original as f64).min(1.0)
+            (line_count(removed) / line_count(original)).min(1.0)
         };
         Self {
             from_version: from.version,
@@ -144,5 +155,5 @@ fn diff_lines(from: &str, to: &str) -> Vec<DiffLine> {
     out
 }
 
-/// Line ceiling past which [`diff_lines`] degrades to a whole-body replace.
+/// Line ceiling past which the line diff degrades to a whole-body replace.
 pub const MAX_DIFF_LINES: usize = 2_000;

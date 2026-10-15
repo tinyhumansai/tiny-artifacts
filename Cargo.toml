@@ -17,7 +17,9 @@ async-trait = "0.1"
 thiserror = "2"
 anyhow = "1"
 uuid = { version = "1", features = ["v4"] }
-tinytools = { git = "https://github.com/tinyhumansai/tinytools.git" }
+tokio = { version = "1", features = ["fs"] }
+tracing = "0.1"
+tinytools = { git = "https://github.com/tinyhumansai/tinytools.git", version = "0.5" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

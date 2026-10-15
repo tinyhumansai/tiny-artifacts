@@ -6,11 +6,11 @@ use async_trait::async_trait;
 use serde_json::Value;
 use tinytools::{Tool, ToolResult};
 
-use crate::store::ArtifactStore;
+use crate::service::Artifacts;
 
 /// List all artifacts, newest first, returning their records.
 pub struct ListArtifactsTool {
-    store: Arc<dyn ArtifactStore>,
+    artifacts: Arc<Artifacts>,
 }
 
 impl std::fmt::Debug for ListArtifactsTool {
@@ -20,23 +20,23 @@ impl std::fmt::Debug for ListArtifactsTool {
 }
 
 impl ListArtifactsTool {
-    /// Constructs the tool bound to one store.
-    pub fn new(store: Arc<dyn ArtifactStore>) -> Self {
-        Self { store }
+    /// Constructs the tool bound to one service.
+    #[must_use]
+    pub fn new(artifacts: Arc<Artifacts>) -> Self {
+        Self { artifacts }
     }
 }
 
 #[async_trait]
 impl Tool for ListArtifactsTool {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "list_artifacts"
     }
 
-    fn description(&self) -> &str {
-        "List all artifacts in the store, sorted by most recently updated \
-         first. Each entry carries the full record including version history. \
-         Use this to find artifact ids for `read_artifact` or \
-         `update_artifact`."
+    fn description(&self) -> &'static str {
+        "List every artifact — documents, pages, images and files — most \
+         recently updated first, each with its version history and status. \
+         Use this to find artifact ids for `read_artifact` or `update_artifact`."
     }
 
     fn parameters_schema(&self) -> Value {
@@ -48,7 +48,7 @@ impl Tool for ListArtifactsTool {
     }
 
     async fn execute(&self, _args: Value) -> anyhow::Result<ToolResult> {
-        let records = self.store.list().await?;
+        let records = self.artifacts.store().list().await?;
         Ok(ToolResult::success(serde_json::to_string(&records)?))
     }
 
