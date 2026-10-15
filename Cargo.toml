@@ -19,7 +19,7 @@ anyhow = "1"
 uuid = { version = "1", features = ["v4"] }
 tokio = { version = "1", features = ["fs"] }
 tracing = "0.1"
-tinytools = { git = "https://github.com/tinyhumansai/tinytools.git" }
+tinytools = { git = "https://github.com/tinyhumansai/tinytools.git", version = "0.5" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
