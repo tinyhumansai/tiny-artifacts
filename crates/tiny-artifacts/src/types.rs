@@ -30,6 +30,7 @@ pub enum ArtifactKind {
 
 impl ArtifactKind {
     /// The stable wire word, for logs and route bodies.
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             ArtifactKind::Text => "text",
@@ -48,6 +49,7 @@ impl ArtifactKind {
 
     /// Parse a wire word (case-insensitive). `None` for anything unknown, so
     /// a caller can reject rather than silently remap a misspelled kind.
+    #[must_use]
     pub fn parse(raw: &str) -> Option<Self> {
         match raw.to_ascii_lowercase().as_str() {
             "text" => Some(Self::Text),
@@ -263,11 +265,13 @@ impl ArtifactRecord {
     }
 
     /// The newest revision, or `None` on an empty record.
+    #[must_use]
     pub fn latest(&self) -> Option<&ArtifactVersion> {
         self.versions.last()
     }
 
     /// A revision by its 1-based number.
+    #[must_use]
     pub fn version(&self, version: u32) -> Option<&ArtifactVersion> {
         self.versions.iter().find(|v| v.version == version)
     }
@@ -287,8 +291,7 @@ impl ArtifactRecord {
         self.updated_at_millis = self
             .versions
             .last()
-            .map(|v| v.created_at_millis)
-            .unwrap_or(self.updated_at_millis);
+            .map_or(self.updated_at_millis, |v| v.created_at_millis);
         next
     }
 
@@ -297,6 +300,7 @@ impl ArtifactRecord {
     ///
     /// `None` when no human has edited or when no agent version precedes the
     /// edit.
+    #[must_use]
     pub fn human_edit_diff(&self) -> Option<crate::diff::ArtifactDiff> {
         let last_operator = self
             .versions

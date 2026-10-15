@@ -30,11 +30,11 @@ impl DeleteArtifactTool {
 
 #[async_trait]
 impl Tool for DeleteArtifactTool {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "delete_artifact"
     }
 
-    fn description(&self) -> &str {
+    fn description(&self) -> &'static str {
         "Permanently delete an artifact and every version of it. Only when the \
          user asks for it to be removed."
     }

@@ -1,11 +1,12 @@
 //! The [`ArtifactStore`] port: durable storage for versioned artifacts.
 //!
-//! The trait is the contract only — no backend. A host (OpenHuman, later
-//! OpenCompany) implements it against its own storage; the tools in this crate
+//! The trait is the contract; [`crate::FsArtifactStore`] is a ready-made
+//! backend on the local file system. A host (`OpenHuman`, `OpenCompany`) may
+//! implement it against its own storage instead; the service and the tools
 //! drive it and know nothing about where bytes land.
 
-use async_trait::async_trait;
 use anyhow::Result;
+use async_trait::async_trait;
 
 use crate::types::ArtifactRecord;
 

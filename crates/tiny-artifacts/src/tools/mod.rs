@@ -107,16 +107,13 @@ pub(crate) fn saved_result(saved: &Saved) -> ToolResult {
     ToolResult::success(out.to_string())
 }
 
-/// Turn a service error into what the agent sees. A malformed call (content
-/// that does not fit the kind) and a backend failure are errors; a refusal
-/// about the world — no such artifact, a missing or out-of-reach file — is a
-/// tool result the agent can act on.
+/// Turn a service error into what the agent sees: a backend failure is an
+/// error; a refusal about the world — no such artifact, a missing or
+/// out-of-reach file — is a tool result the agent can act on. (A malformed call
+/// never reaches the service: [`content_for`] rejects it first.)
 pub(crate) fn tool_error(err: ArtifactsError) -> anyhow::Result<ToolResult> {
     match err {
         ArtifactsError::Backend(err) => Err(err),
-        err @ (ArtifactsError::WrongContent { .. } | ArtifactsError::EmptyText) => {
-            Err(anyhow::anyhow!(err))
-        }
         other => Ok(ToolResult::error(other.to_string())),
     }
 }

@@ -86,7 +86,7 @@ impl ArtifactStore for FsArtifactStore {
                 ),
             }
         }
-        records.sort_by(|a, b| b.updated_at_millis.cmp(&a.updated_at_millis));
+        records.sort_by_key(|record| std::cmp::Reverse(record.updated_at_millis));
         Ok(records)
     }
 

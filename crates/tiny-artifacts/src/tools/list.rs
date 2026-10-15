@@ -29,11 +29,11 @@ impl ListArtifactsTool {
 
 #[async_trait]
 impl Tool for ListArtifactsTool {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "list_artifacts"
     }
 
-    fn description(&self) -> &str {
+    fn description(&self) -> &'static str {
         "List every artifact — documents, pages, images and files — most \
          recently updated first, each with its version history and status. \
          Use this to find artifact ids for `read_artifact` or `update_artifact`."

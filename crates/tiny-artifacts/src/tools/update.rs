@@ -32,11 +32,11 @@ impl UpdateArtifactTool {
 
 #[async_trait]
 impl Tool for UpdateArtifactTool {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "update_artifact"
     }
 
-    fn description(&self) -> &str {
+    fn description(&self) -> &'static str {
         "Append a new revision to an existing artifact; earlier versions are \
          kept. Text artifacts take the full new `body`; image and file \
          artifacts take the new file's `path`. A body identical to the newest \

@@ -1,6 +1,10 @@
 //! Integration test for the artifact tools: create → read → update → list,
 //! verifying the versioned record model and tool responses.
 
+// Unwrapping is fine in tests (AGENTS.md); the workspace lints keep it out of
+// library code.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::sync::Arc;
 
 use tiny_artifacts::{
@@ -16,7 +20,7 @@ struct MemStore(std::sync::Mutex<Vec<ArtifactRecord>>);
 impl ArtifactStore for MemStore {
     async fn list(&self) -> anyhow::Result<Vec<ArtifactRecord>> {
         let mut records = self.0.lock().unwrap().clone();
-        records.sort_by(|a, b| b.updated_at_millis.cmp(&a.updated_at_millis));
+        records.sort_by_key(|r| std::cmp::Reverse(r.updated_at_millis));
         Ok(records)
     }
     async fn get(&self, id: &str) -> anyhow::Result<Option<ArtifactRecord>> {

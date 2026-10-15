@@ -34,11 +34,11 @@ impl CreateArtifactTool {
 
 #[async_trait]
 impl Tool for CreateArtifactTool {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "create_artifact"
     }
 
-    fn description(&self) -> &str {
+    fn description(&self) -> &'static str {
         "Create a deliverable the user can see and keep, with its first version. \
          Text kinds take `body`: `html` (an HTML page), `markdown` (a document), \
          `text` (plain text). File kinds take `path`, a file you already wrote \

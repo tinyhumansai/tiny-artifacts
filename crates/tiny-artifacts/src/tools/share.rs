@@ -32,11 +32,11 @@ impl ShareArtifactTool {
 
 #[async_trait]
 impl Tool for ShareArtifactTool {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "share_artifact"
     }
 
-    fn description(&self) -> &str {
+    fn description(&self) -> &'static str {
         "Share an artifact with people outside this app and get a link. By \
          default the newest version is shared through a private link that \
          expires; `public: true` asks for a link anyone can open instead. How \

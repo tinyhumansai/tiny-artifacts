@@ -1,5 +1,9 @@
 //! The ready-made file-system store.
 
+// Unwrapping is fine in tests (AGENTS.md); the workspace lints keep it out of
+// library code.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::path::PathBuf;
 
 use tiny_artifacts::{ArtifactKind, ArtifactRecord, ArtifactStore, FsArtifactStore};
@@ -92,4 +96,35 @@ async fn records_written_by_earlier_hosts_still_load() {
         .unwrap();
     assert_eq!(record.title, "Old");
     assert_eq!(record.latest().unwrap().body, "# old");
+}
+
+#[tokio::test]
+async fn io_failures_are_errors_with_the_artifact_named() {
+    let root = dir();
+    std::fs::create_dir_all(&root).unwrap();
+
+    // The store's directory is a file: nothing can be listed or written.
+    let blocked = root.join("not-a-dir");
+    std::fs::write(&blocked, b"x").unwrap();
+    let store = FsArtifactStore::new(&blocked);
+    assert_eq!(store.dir(), blocked.as_path());
+    assert!(store.list().await.is_err());
+    assert!(store.upsert(&record("a", 1)).await.is_err());
+
+    // A directory where a record should be: unreadable, undeletable, and an
+    // atomic replace onto it fails without leaving its staging file behind.
+    let records = root.join("records");
+    std::fs::create_dir_all(records.join("taken.json")).unwrap();
+    std::fs::write(records.join("taken.json").join("inner"), b"x").unwrap();
+    let store = FsArtifactStore::new(&records);
+    let err = store.get("taken").await.unwrap_err();
+    assert!(format!("{err:#}").contains("taken"), "{err:#}");
+    assert!(store.delete("taken").await.is_err());
+    assert!(store.upsert(&record("taken", 1)).await.is_err());
+    let leftovers: Vec<_> = std::fs::read_dir(&records)
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .filter(|n| n.to_string_lossy().ends_with(".tmp"))
+        .collect();
+    assert!(leftovers.is_empty(), "{leftovers:?}");
 }

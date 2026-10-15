@@ -30,11 +30,11 @@ impl ReadArtifactTool {
 
 #[async_trait]
 impl Tool for ReadArtifactTool {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "read_artifact"
     }
 
-    fn description(&self) -> &str {
+    fn description(&self) -> &'static str {
         "Fetch one artifact by its `artifact_id`, returning its full record \
          with all versions, timestamps and authorship. Use `list_artifacts` \
          first to discover artifact ids."

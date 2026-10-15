@@ -2,6 +2,10 @@
 //! pending lifecycle, observer events, publishing, and records written before
 //! these fields existed.
 
+// Unwrapping is fine in tests (AGENTS.md); the workspace lints keep it out of
+// library code.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -631,4 +635,13 @@ async fn tool_versions_are_written_by_the_agent_the_tools_were_built_for() {
         .versions
         .iter()
         .all(|v| v.author == ArtifactAuthor::Agent && v.author_id == "researcher"));
+}
+
+#[test]
+fn the_service_debug_view_shows_its_wiring_not_its_contents() {
+    let artifacts = Artifacts::new(Arc::new(MemStore::default()))
+        .with_publisher(Arc::new(FakePublisher::default()));
+    let shown = format!("{artifacts:?}");
+    assert!(shown.contains("publisher: true"), "{shown}");
+    assert!(shown.contains("observer: false"), "{shown}");
 }
