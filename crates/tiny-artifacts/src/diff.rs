@@ -144,5 +144,5 @@ fn diff_lines(from: &str, to: &str) -> Vec<DiffLine> {
     out
 }
 
-/// Line ceiling past which [`diff_lines`] degrades to a whole-body replace.
+/// Line ceiling past which the line diff degrades to a whole-body replace.
 pub const MAX_DIFF_LINES: usize = 2_000;
