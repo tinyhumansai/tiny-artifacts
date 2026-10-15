@@ -8,6 +8,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::file_ref::FileRef;
+
 /// What an artifact holds. Drives the consumer's rendering choice; the body
 /// is always text on the wire (a binary artifact carries a reference, not
 /// bytes).
@@ -36,6 +38,12 @@ impl ArtifactKind {
             ArtifactKind::Image => "image",
             ArtifactKind::File => "file",
         }
+    }
+
+    /// Whether this kind's content is a file reference rather than text.
+    #[must_use]
+    pub fn holds_file(self) -> bool {
+        matches!(self, Self::Image | Self::File)
     }
 
     /// Parse a wire word (case-insensitive). `None` for anything unknown, so
@@ -86,6 +94,69 @@ pub struct ArtifactVersion {
     /// Why this revision exists (e.g. `"operator edit before approval"`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// For an `image` or `file` artifact, the checked file this revision
+    /// points at (its `body` holds the same path, for older readers).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<FileRef>,
+    /// Where this revision was shared, when it was. The one field set after a
+    /// version is recorded: sharing does not change what the revision says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub published: Option<PublishedLink>,
+}
+
+/// A link a revision was shared under (see [`crate::ArtifactPublisher`]).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublishedLink {
+    /// The shareable URL.
+    pub url: String,
+    /// Epoch-millis the link stops working, when it expires.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at_millis: Option<u64>,
+    /// Epoch-millis it was shared.
+    pub published_at_millis: u64,
+    /// Whether the link is public (anyone can open it) rather than private
+    /// and time-limited.
+    #[serde(default)]
+    pub public: bool,
+}
+
+impl PublishedLink {
+    /// Whether the link still works at `now_millis`.
+    #[must_use]
+    pub fn is_live(&self, now_millis: u64) -> bool {
+        self.expires_at_millis.is_none_or(|at| at > now_millis)
+    }
+}
+
+/// Where an artifact is in its life.
+///
+/// A producer that takes time (rendering a deck, generating an image) opens
+/// the artifact `Pending` so the host can show it in progress, then completes
+/// or fails it. An artifact made in one step is `Ready` from the start, and a
+/// record written before this field existed reads as `Ready`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ArtifactStatus {
+    /// Being produced; may have no version yet.
+    Pending,
+    /// Has at least one finished version.
+    #[default]
+    Ready,
+    /// Production failed; see [`ArtifactRecord::error`].
+    Failed,
+}
+
+impl ArtifactStatus {
+    /// The stable wire word.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Ready => "ready",
+            Self::Failed => "failed",
+        }
+    }
 }
 
 impl ArtifactVersion {
@@ -104,6 +175,8 @@ impl ArtifactVersion {
             author_id: author_id.into(),
             created_at_millis,
             note: None,
+            file: None,
+            published: None,
         }
     }
 }
@@ -126,6 +199,12 @@ pub struct ArtifactRecord {
     pub created_at_millis: u64,
     /// Epoch-millis of the newest revision.
     pub updated_at_millis: u64,
+    /// Where the artifact is in its life. Absent on older records: `Ready`.
+    #[serde(default)]
+    pub status: ArtifactStatus,
+    /// Why production failed, when `status` is `Failed`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 impl ArtifactRecord {
@@ -143,10 +222,44 @@ impl ArtifactRecord {
             id,
             title: title.into(),
             kind,
-            versions: vec![ArtifactVersion::new(1, body, ArtifactAuthor::Agent, author_id, at_millis)],
+            versions: vec![ArtifactVersion::new(
+                1,
+                body,
+                ArtifactAuthor::Agent,
+                author_id,
+                at_millis,
+            )],
             created_at_millis: at_millis,
             updated_at_millis: at_millis,
+            status: ArtifactStatus::Ready,
+            error: None,
         }
+    }
+
+    /// Opens an artifact that is still being produced: no versions yet,
+    /// status `Pending`.
+    pub fn pending(
+        id: impl Into<String>,
+        title: impl Into<String>,
+        kind: ArtifactKind,
+        at_millis: u64,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            title: title.into(),
+            kind,
+            versions: Vec::new(),
+            created_at_millis: at_millis,
+            updated_at_millis: at_millis,
+            status: ArtifactStatus::Pending,
+            error: None,
+        }
+    }
+
+    /// Whether the artifact's content is a file (`image` / `file` kinds).
+    #[must_use]
+    pub fn holds_file(&self) -> bool {
+        self.kind.holds_file()
     }
 
     /// The newest revision, or `None` on an empty record.
@@ -171,7 +284,11 @@ impl ArtifactRecord {
             version: next,
             ..version
         });
-        self.updated_at_millis = self.versions.last().map(|v| v.created_at_millis).unwrap_or(self.updated_at_millis);
+        self.updated_at_millis = self
+            .versions
+            .last()
+            .map(|v| v.created_at_millis)
+            .unwrap_or(self.updated_at_millis);
         next
     }
 
@@ -190,6 +307,9 @@ impl ArtifactRecord {
             .versions
             .iter()
             .rfind(|v| v.author == ArtifactAuthor::Agent && v.version < last_operator.version)?;
-        Some(crate::diff::ArtifactDiff::between(last_agent_before, last_operator))
+        Some(crate::diff::ArtifactDiff::between(
+            last_agent_before,
+            last_operator,
+        ))
     }
 }

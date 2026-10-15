@@ -18,6 +18,8 @@ async-trait.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
 uuid.workspace = true
+tokio.workspace = true
+tracing.workspace = true
 tinytools.workspace = true
 
 [dev-dependencies]

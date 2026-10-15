@@ -6,12 +6,12 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tinytools::{Tool, ToolResult};
 
-use crate::store::ArtifactStore;
+use crate::service::Artifacts;
 use crate::tools::read_required_str;
 
 /// Fetch one artifact with its full version history.
 pub struct ReadArtifactTool {
-    store: Arc<dyn ArtifactStore>,
+    artifacts: Arc<Artifacts>,
 }
 
 impl std::fmt::Debug for ReadArtifactTool {
@@ -21,9 +21,10 @@ impl std::fmt::Debug for ReadArtifactTool {
 }
 
 impl ReadArtifactTool {
-    /// Constructs the tool bound to one store.
-    pub fn new(store: Arc<dyn ArtifactStore>) -> Self {
-        Self { store }
+    /// Constructs the tool bound to one service.
+    #[must_use]
+    pub fn new(artifacts: Arc<Artifacts>) -> Self {
+        Self { artifacts }
     }
 }
 
@@ -54,7 +55,7 @@ impl Tool for ReadArtifactTool {
 
     async fn execute(&self, args: Value) -> anyhow::Result<ToolResult> {
         let id = read_required_str(&args, "artifact_id")?;
-        match self.store.get(&id).await? {
+        match self.artifacts.store().get(&id).await? {
             Some(record) => Ok(ToolResult::success(serde_json::to_string(&record)?)),
             None => Ok(ToolResult::error(format!("artifact `{id}` not found"))),
         }

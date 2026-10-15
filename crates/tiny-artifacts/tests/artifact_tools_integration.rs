@@ -4,8 +4,8 @@
 use std::sync::Arc;
 
 use tiny_artifacts::{
-    ArtifactAuthor, ArtifactRecord, ArtifactStore, ArtifactVersion, CreateArtifactTool,
-    ListArtifactsTool, ReadArtifactTool, UpdateArtifactTool,
+    ArtifactAuthor, ArtifactRecord, ArtifactStore, ArtifactVersion, Artifacts, Author,
+    CreateArtifactTool, ListArtifactsTool, ReadArtifactTool, UpdateArtifactTool,
 };
 use tinytools::Tool;
 
@@ -42,10 +42,11 @@ impl ArtifactStore for MemStore {
 #[tokio::test]
 async fn create_read_update_list() {
     let store: Arc<dyn ArtifactStore> = Arc::new(MemStore(std::sync::Mutex::new(Vec::new())));
-    let create = CreateArtifactTool::new(store.clone());
-    let read = ReadArtifactTool::new(store.clone());
-    let update = UpdateArtifactTool::new(store.clone());
-    let list = ListArtifactsTool::new(store.clone());
+    let artifacts = Arc::new(Artifacts::new(store));
+    let create = CreateArtifactTool::new(artifacts.clone(), Author::agent("agent"));
+    let read = ReadArtifactTool::new(artifacts.clone());
+    let update = UpdateArtifactTool::new(artifacts.clone(), Author::agent("agent"));
+    let list = ListArtifactsTool::new(artifacts.clone());
 
     // Step 1: create
     let args = serde_json::json!({
@@ -95,7 +96,10 @@ async fn create_read_update_list() {
     assert_eq!(record.versions[0].body, "## v1.0\nReleased on time.");
     assert_eq!(record.versions[1].body, "## v1.1\nFixed the critical bug.");
     // human_edit_diff is None because no operator-authored version
-    assert!(record.human_edit_diff().is_none(), "no operator version yet");
+    assert!(
+        record.human_edit_diff().is_none(),
+        "no operator version yet"
+    );
 
     // Step 5: list — should show 1 record
     let result = list.execute(serde_json::json!({})).await.unwrap();
@@ -128,9 +132,10 @@ async fn create_read_update_list() {
 #[tokio::test]
 async fn error_paths() {
     let store: Arc<dyn ArtifactStore> = Arc::new(MemStore(std::sync::Mutex::new(Vec::new())));
-    let create = CreateArtifactTool::new(store.clone());
-    let read = ReadArtifactTool::new(store.clone());
-    let update = UpdateArtifactTool::new(store.clone());
+    let artifacts = Arc::new(Artifacts::new(store));
+    let create = CreateArtifactTool::new(artifacts.clone(), Author::agent("agent"));
+    let read = ReadArtifactTool::new(artifacts.clone());
+    let update = UpdateArtifactTool::new(artifacts.clone(), Author::agent("agent"));
 
     // Argument validation failures surface as `Err` from `execute` (the
     // tool could not run at all), while domain failures like a missing
@@ -188,7 +193,10 @@ async fn error_paths() {
         }))
         .await
         .unwrap();
-    assert!(result.is_error, "update of missing artifact must be an error");
+    assert!(
+        result.is_error,
+        "update of missing artifact must be an error"
+    );
 
     // A happy-path create still works after all the rejections.
     let result = create

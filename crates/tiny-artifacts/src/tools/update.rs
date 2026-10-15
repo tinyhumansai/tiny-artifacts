@@ -6,13 +6,13 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tinytools::{PermissionLevel, Tool, ToolResult};
 
-use crate::store::ArtifactStore;
-use crate::tools::read_required_str;
-use crate::types::{ArtifactAuthor, ArtifactVersion};
+use crate::service::{Artifacts, Author};
+use crate::tools::{content_for, optional_str, read_required_str, saved_result, tool_error};
 
 /// Append a new revision to an existing artifact.
 pub struct UpdateArtifactTool {
-    store: Arc<dyn ArtifactStore>,
+    artifacts: Arc<Artifacts>,
+    author: Author,
 }
 
 impl std::fmt::Debug for UpdateArtifactTool {
@@ -22,9 +22,11 @@ impl std::fmt::Debug for UpdateArtifactTool {
 }
 
 impl UpdateArtifactTool {
-    /// Constructs the tool bound to one store.
-    pub fn new(store: Arc<dyn ArtifactStore>) -> Self {
-        Self { store }
+    /// Constructs the tool bound to one service, writing versions as
+    /// `author` (the agent the tool is built for).
+    #[must_use]
+    pub fn new(artifacts: Arc<Artifacts>, author: Author) -> Self {
+        Self { artifacts, author }
     }
 }
 
@@ -35,10 +37,11 @@ impl Tool for UpdateArtifactTool {
     }
 
     fn description(&self) -> &str {
-        "Append a new revision to an existing artifact. The body you pass \
-         becomes a new version with `author: agent`. Use `read_artifact` \
-         first to see the full version history and get the `artifact_id`. \
-         Returns the new version number."
+        "Append a new revision to an existing artifact; earlier versions are \
+         kept. Text artifacts take the full new `body`; image and file \
+         artifacts take the new file's `path`. A body identical to the newest \
+         version adds nothing. Use `read_artifact` first to see the history \
+         (including the user's own edits). Returns the new version number."
     }
 
     fn parameters_schema(&self) -> Value {
@@ -47,18 +50,22 @@ impl Tool for UpdateArtifactTool {
             "properties": {
                 "artifact_id": {
                     "type": "string",
-                    "description": "The artifact id (UUID) to update."
+                    "description": "The artifact id to update."
                 },
                 "body": {
                     "type": "string",
-                    "description": "The new revision content."
+                    "description": "For text artifacts: the full new content."
+                },
+                "path": {
+                    "type": "string",
+                    "description": "For image and file artifacts: the new file, relative to your working folder."
                 },
                 "note": {
                     "type": "string",
                     "description": "Optional note about this revision (e.g. why it was changed)."
                 }
             },
-            "required": ["artifact_id", "body"]
+            "required": ["artifact_id"]
         })
     }
 
@@ -68,34 +75,20 @@ impl Tool for UpdateArtifactTool {
 
     async fn execute(&self, args: Value) -> anyhow::Result<ToolResult> {
         let id = read_required_str(&args, "artifact_id")?;
-        let body = read_required_str(&args, "body")?;
-        let note = args.get("note").and_then(|v| v.as_str()).map(|s| s.to_string());
-
-        let mut record = match self.store.get(&id).await? {
-            Some(r) => r,
-            None => return Ok(ToolResult::error(format!("artifact `{id}` not found"))),
+        let record = match self.artifacts.get(&id).await {
+            Ok(Some(record)) => record,
+            Ok(None) => return Ok(ToolResult::error(format!("artifact `{id}` not found"))),
+            Err(err) => return tool_error(err),
         };
-
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_millis() as u64;
-
-        let v = ArtifactVersion::new(0, &body, ArtifactAuthor::Agent, "agent", now);
-        let next = record.push_version(v);
-        // Stamp the note onto the version we just pushed
-        if let Some(n) = note {
-            if let Some(latest) = record.versions.last_mut() {
-                latest.note = Some(n);
-            }
+        let content = content_for(record.kind, &args)?;
+        match self
+            .artifacts
+            .revise(&id, content, &self.author, optional_str(&args, "note"))
+            .await
+        {
+            Ok(saved) => Ok(saved_result(&saved)),
+            Err(err) => tool_error(err),
         }
-
-        self.store.upsert(&record).await?;
-
-        Ok(ToolResult::success(json!({
-            "artifact_id": id,
-            "version": next,
-            "title": record.title,
-        }).to_string()))
     }
 
     fn is_concurrency_safe(&self, _args: &Value) -> bool {
