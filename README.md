@@ -111,11 +111,14 @@ store, including records written by earlier versions.
 
 ## Releasing
 
-Hosts consume this crate by git revision — OpenHuman vendors it as a submodule —
-so a merged change ships when a host moves its pin to it. The
-`.github/workflows/release.yml` workflow still comes from the module template
-(it builds and verifies a TinyBus `cdylib`) and does not release this library
-yet. A change to a public signature is a `minor` bump while the crate is `0.x`.
+Run the **Release** workflow on `main` from the Actions tab with a `patch`,
+`minor`, or `major` bump. It re-runs every check, sets the new version in the
+root `Cargo.toml` and `Cargo.lock`, commits and tags `vX.Y.Z` on `main`, and
+creates a GitHub release with generated notes. Do not hand-edit the version. A
+change to a public signature is a `minor` bump while the crate is `0.x`.
+
+Hosts consume the crate by git tag or revision (OpenHuman vendors it as a
+submodule), so a release ships no binaries.
 
 ## Documentation
 

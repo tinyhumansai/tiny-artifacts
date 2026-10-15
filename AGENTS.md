@@ -291,13 +291,13 @@ explicitly declined with a reason.
 ## Releases
 
 Releases run from `.github/workflows/release.yml` via a manual
-`workflow_dispatch` with a `patch` / `minor` / `major` bump; `current` resumes
-an interrupted release after its version commit and tag exist. The workflow
-re-runs the full validation suite, computes the next version, updates
+`workflow_dispatch` on `main` with a `patch` / `minor` / `major` bump; `current`
+resumes an interrupted release after its version commit and tag exist. The
+workflow re-runs the full validation suite, computes the next version, updates
 the root `[workspace.package]` version and `Cargo.lock`, commits and tags
-`vX.Y.Z`, builds `crates/template` as a TinyBus module for every supported
-platform, pushes, and creates an immutable GitHub release with installable
-native packages.
+`vX.Y.Z` on `main`, and creates a GitHub release with notes generated from the
+merged pull requests. `tiny-artifacts` is a library that hosts build into
+themselves, so a release ships no binaries; hosts pin a tag or revision.
 
 Consequently:
 
@@ -307,8 +307,8 @@ Consequently:
 - Follow semantic versioning. Any change to the public surface that is not
   purely additive is a breaking change and needs a major bump (pre-1.0: a minor
   bump).
-- The module must be packageable for every release target — `main` should
-  always be green.
+- `main` should always be green: the release re-runs every check before it
+  tags.
 
 ## Agent Working Agreement
 
