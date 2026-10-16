@@ -46,7 +46,7 @@ impl FsArtifactStore {
 }
 
 /// Reject ids that could escape the directory or collide with its own files.
-fn validate_id(id: &str) -> Result<()> {
+pub(crate) fn validate_id(id: &str) -> Result<()> {
     if id.is_empty() || id == "." || id == ".." {
         bail!("invalid artifact id {id:?}");
     }

@@ -645,3 +645,128 @@ fn the_service_debug_view_shows_its_wiring_not_its_contents() {
     assert!(shown.contains("publisher: true"), "{shown}");
     assert!(shown.contains("observer: false"), "{shown}");
 }
+
+#[tokio::test]
+async fn with_version_files_each_version_keeps_its_own_bytes() {
+    let root = workdir();
+    let kept = workdir();
+    std::fs::write(root.join("deck.pptx"), b"v1").unwrap();
+    let artifacts = Artifacts::new(Arc::new(MemStore::default()))
+        .with_publisher(Arc::new(FakePublisher::default()))
+        .with_file_roots(FileRoots::new([root.clone()]))
+        .with_version_files(&kept);
+    let id = artifacts
+        .create(
+            ArtifactKind::File,
+            "Deck",
+            Content::File("deck.pptx".into()),
+            &Author::agent("a"),
+            None,
+        )
+        .await
+        .unwrap()
+        .record
+        .id;
+    // A producer overwrites the same file for its next version.
+    std::fs::write(root.join("deck.pptx"), b"v2-longer").unwrap();
+    let record = artifacts
+        .revise(
+            &id,
+            Content::File("deck.pptx".into()),
+            &Author::agent("a"),
+            None,
+        )
+        .await
+        .unwrap()
+        .record;
+
+    let file_of = |n: u32| record.version(n).unwrap().file.clone().unwrap();
+    assert_eq!(std::fs::read(&file_of(1).path).unwrap(), b"v1");
+    assert_eq!(std::fs::read(&file_of(2).path).unwrap(), b"v2-longer");
+    assert_eq!(
+        Path::new(&file_of(1).path),
+        kept.join(&id).join("v1.pptx").as_path()
+    );
+    assert_eq!(file_of(2).size_bytes, 9);
+    assert_eq!(record.version(1).unwrap().body, file_of(1).path);
+    // The older version still shows what it was, so it can be shared.
+    let options = PublishOptions::default();
+    assert_eq!(
+        artifacts
+            .publish(&id, Some(1), &options)
+            .await
+            .unwrap()
+            .version,
+        1
+    );
+}
+
+#[tokio::test]
+async fn deleting_an_artifact_removes_its_version_files() {
+    let root = workdir();
+    let kept = workdir();
+    std::fs::write(root.join("notes"), b"plain").unwrap();
+    let artifacts = Artifacts::new(Arc::new(MemStore::default()))
+        .with_file_roots(FileRoots::new([root.clone()]))
+        .with_version_files(&kept);
+    let saved = artifacts
+        .create(
+            ArtifactKind::File,
+            "Notes",
+            Content::File("notes".into()),
+            &Author::agent("a"),
+            None,
+        )
+        .await
+        .unwrap();
+    let id = saved.record.id;
+    // No extension: the copy is just the version number.
+    assert!(kept.join(&id).join("v1").is_file());
+
+    assert!(artifacts.delete(&id).await.unwrap().0);
+    assert!(!kept.join(&id).exists());
+    // Deleting again finds nothing and touches nothing.
+    assert!(!artifacts.delete(&id).await.unwrap().0);
+}
+
+#[tokio::test]
+async fn a_version_file_needs_an_id_that_is_a_single_file_name() {
+    let root = workdir();
+    let kept = workdir();
+    std::fs::write(root.join("a.txt"), b"x").unwrap();
+    let artifacts = Artifacts::new(Arc::new(MemStore::default()))
+        .with_file_roots(FileRoots::new([root.clone()]))
+        .with_version_files(&kept);
+    let err = artifacts
+        .create(
+            ArtifactKind::File,
+            "A",
+            Content::File("a.txt".into()),
+            &Author::agent("a"),
+            Some("../escape".into()),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(err, ArtifactsError::Backend(_)), "{err}");
+    assert!(!kept.parent().unwrap().join("escape").exists());
+}
+
+#[tokio::test]
+async fn text_versions_are_not_copied() {
+    let kept = workdir();
+    let artifacts = Artifacts::new(Arc::new(MemStore::default())).with_version_files(&kept);
+    let saved = artifacts
+        .create(
+            ArtifactKind::Markdown,
+            "Notes",
+            Content::Text("# hi".into()),
+            &Author::agent("a"),
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(saved.record.latest().unwrap().file.is_none());
+    assert!(!kept.join(&saved.record.id).exists());
+    let shown = format!("{artifacts:?}");
+    assert!(shown.contains("version_files: Some"), "{shown}");
+}

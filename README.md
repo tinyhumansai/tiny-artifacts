@@ -62,9 +62,13 @@ The service enforces the rules, whoever is calling:
   appends nothing.
 - **Slow producers** open an artifact with `begin` (status `pending`, no
   version yet), then `revise` to complete it or `fail` it with a reason.
+- **File versions keep their bytes** with `with_version_files(dir)`: each
+  file version is copied to `<dir>/<id>/v<N>.<ext>` and points at the copy, so
+  a producer that overwrites the same file for its next version does not change
+  the earlier ones. Deleting an artifact removes its copies.
 - **Sharing** (`publish`) records the link on the version it shared and reuses
-  a live link instead of sharing again. An older file version is refused once
-  its file has changed.
+  a live link instead of sharing again. Without version files, an older file
+  version is refused once its file has changed.
 
 ## Ports a host implements
 

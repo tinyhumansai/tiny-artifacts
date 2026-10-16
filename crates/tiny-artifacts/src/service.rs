@@ -12,12 +12,13 @@
 //!   record is always written first and anything the host shows is derived
 //!   from it.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use uuid::Uuid;
 
 use crate::events::{ArtifactEvent, ArtifactEventKind, ArtifactObserver};
-use crate::file_ref::{FileRefError, FileRoots};
+use crate::file_ref::{FileRef, FileRefError, FileRoots};
 use crate::publish::{ArtifactPublisher, PublishOptions};
 use crate::store::ArtifactStore;
 use crate::types::{
@@ -140,6 +141,7 @@ pub struct Artifacts {
     observer: Option<Arc<dyn ArtifactObserver>>,
     publisher: Option<Arc<dyn ArtifactPublisher>>,
     files: FileRoots,
+    version_files: Option<PathBuf>,
 }
 
 impl std::fmt::Debug for Artifacts {
@@ -148,6 +150,7 @@ impl std::fmt::Debug for Artifacts {
             .field("observer", &self.observer.is_some())
             .field("publisher", &self.publisher.is_some())
             .field("files", &self.files)
+            .field("version_files", &self.version_files)
             .finish_non_exhaustive()
     }
 }
@@ -162,6 +165,7 @@ impl Artifacts {
             observer: None,
             publisher: None,
             files: FileRoots::default(),
+            version_files: None,
         }
     }
 
@@ -183,6 +187,19 @@ impl Artifacts {
     #[must_use]
     pub fn with_file_roots(mut self, files: FileRoots) -> Self {
         self.files = files;
+        self
+    }
+
+    /// Keep a copy of every file version under `dir`, as
+    /// `<dir>/<artifact id>/v<version>.<extension>`, and point the version at
+    /// that copy. Without it a version points at the file it was given, and a
+    /// later change to that file changes what the version shows.
+    ///
+    /// The copies belong to the service: [`Self::delete`] removes an
+    /// artifact's copies with it.
+    #[must_use]
+    pub fn with_version_files(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.version_files = Some(dir.into());
         self
     }
 
@@ -235,6 +252,7 @@ impl Artifacts {
         let version = self.version_for(kind, content, author, at).await?;
         let mut record = ArtifactRecord::pending(id.unwrap_or_else(new_id), title.trim(), kind, at);
         record.push_version(version);
+        self.keep_version_file(&mut record).await?;
         record.status = ArtifactStatus::Ready;
         self.store.upsert(&record).await?;
         Ok(self.saved(record, true, ArtifactEventKind::Ready).await)
@@ -295,6 +313,7 @@ impl Artifacts {
             .await?;
         version.note = note.filter(|n| !n.trim().is_empty());
         record.push_version(version);
+        self.keep_version_file(&mut record).await?;
         record.status = ArtifactStatus::Ready;
         record.error = None;
         self.store.upsert(&record).await?;
@@ -325,6 +344,9 @@ impl Artifacts {
             return Ok((false, None));
         };
         let removed = self.store.delete(id).await?;
+        if removed {
+            self.drop_version_files(id).await;
+        }
         let notice = if removed {
             self.notify(ArtifactEventKind::Deleted, &record).await
         } else {
@@ -402,6 +424,64 @@ impl Artifacts {
             version: wanted.version,
             reused: false,
         })
+    }
+
+    /// With [`Self::with_version_files`], copy the newest version's file into
+    /// the version-file folder and point the version at the copy.
+    async fn keep_version_file(&self, record: &mut ArtifactRecord) -> Result<(), ArtifactsError> {
+        let Some(dir) = &self.version_files else {
+            return Ok(());
+        };
+        let id = record.id.clone();
+        // The id names the copies' folder.
+        crate::fs_store::validate_id(&id)?;
+        let Some(version) = record.versions.last_mut() else {
+            return Ok(());
+        };
+        let Some(file) = &version.file else {
+            return Ok(());
+        };
+        let name = match file.extension() {
+            Some(ext) => format!("v{}.{ext}", version.version),
+            None => format!("v{}", version.version),
+        };
+        let folder = dir.join(&id);
+        let copy = folder.join(name);
+        tokio::fs::create_dir_all(&folder)
+            .await
+            .map_err(|e| anyhow::anyhow!("cannot create {}: {e}", folder.display()))?;
+        tokio::fs::copy(&file.path, &copy).await.map_err(|e| {
+            anyhow::anyhow!("cannot keep version {} of `{id}`: {e}", version.version)
+        })?;
+        let kept = FileRef {
+            path: copy.display().to_string(),
+            size_bytes: file.size_bytes,
+            media_type: file.media_type.clone(),
+        };
+        version.body.clone_from(&kept.path);
+        version.file = Some(kept);
+        Ok(())
+    }
+
+    /// Remove a deleted artifact's version-file copies. Best-effort: the
+    /// record is already gone.
+    async fn drop_version_files(&self, id: &str) {
+        let Some(dir) = &self.version_files else {
+            return;
+        };
+        if crate::fs_store::validate_id(id).is_err() {
+            return;
+        }
+        match tokio::fs::remove_dir_all(dir.join(id)).await {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => tracing::warn!(
+                target: "tiny-artifacts",
+                artifact_id = id,
+                err = %err,
+                "could not remove an artifact's version files"
+            ),
+        }
     }
 
     async fn require(&self, id: &str) -> Result<ArtifactRecord, ArtifactsError> {
